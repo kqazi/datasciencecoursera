@@ -1,0 +1,172 @@
+---
+title: "Weather storm impacts on populations and economic conditions"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Synopsis
+
+Using the National Weather Service "Storm Data" set we were able to determine types of storm related events with the highest human impact (fatalities & injuries) and highest economic impact (cost in U.S. dollars).  
+
+The storm related events with the highest human impact (including fatalities and injuries) are (in order of impact):
+
+1. Tornado        97,024      
+2. Heat           13,973
+3. Thunderstorms  10,220
+4. Flooding       10,093      
+5. Lightning      6,046
+
+The storm related events with the highest economic impact are (in order of impact):
+
+1. Flooding   $179,607,188,535
+2. Ice        $107,622,597,820
+3. Hurricane  $90,220,897,810
+4. Tornado    $58,954,697,546
+5. Hail       $20,492,365,861
+6. Drought    $15,018,922,000
+
+## Data Processing
+
+The file at the URL: [Storm Data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) was used as the source of this analysis.   
+
+The code snippet below loads in the CSV data.  Any empty strings are treated as NA.
+```{r echo=TRUE, cache=TRUE}
+stormData <- read.table("./repdata-data-StormData.csv", sep = ",", strip.white = TRUE, blank.lines.skip = TRUE, header = TRUE, stringsAsFactors = FALSE, na.strings = c(""))
+```
+
+## Results
+
+### Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+
+Below we sum() both the fatalities and injuries by event-type to create 2 new data frames:
+```{r echo=TRUE}
+# Total Fatalities by Event Type
+fatalitiesByEventType <- aggregate(stormData$FATALITIES, by = list(eventType = tolower(stormData$EVTYPE)), sum)
+
+# Total Injuries by Event Type
+injuriesByEventType <- aggregate(stormData$INJURIES, by = list(eventType = tolower(stormData$EVTYPE)), sum)
+```
+
+Once we have the sums for both fatalites and injuries by event type we then merge the two event-types together and create 2 new columns: "Fatalities" & "Injuries":
+```{r echo=TRUE}
+totalHumanImpactByEvent <- merge(x = fatalitiesByEventType, y = injuriesByEventType, by="eventType")
+totalHumanImpactByEvent$Impact.x <- NULL
+totalHumanImpactByEvent$Impact.y <- NULL
+colnames(totalHumanImpactByEvent)[2:3] <- c("Fatalities", "Injuries")
+```
+
+Now we will actually filter out all the events with "0" fatalities and events and also add a "Total" column that sums the two values.
+```{r echo=TRUE}
+head(totalHumanImpactByEvent)
+# Filter out events with 0 for both fatalities and injuries
+validEvents <- totalHumanImpactByEvent[which(totalHumanImpactByEvent$Fatalities != 0 & totalHumanImpactByEvent$Injuries != 0),]
+validEvents$Total <- rowSums(validEvents[,c(2,3)])
+head(validEvents)
+```
+
+Once we have the events filtered out we can go ahead and look for the events with a signifigant amount of injuries and fatalities.  I did this by looking at the *validEvents* data frame to see which ones had large "totals" and then *grep()* those accordingly.  This is a *subjective* step in this analysis, but if you look at the *validEvents* data frame you can get a sense of why I did what I did as there are a lot of event types with names that are not consistent, mis-spelled, etc.  
+```{r echo=TRUE}
+totalTornado <- sum(validEvents[grep("tornado*", validEvents$eventType),]$Total)
+totalFlood <- sum(validEvents[grep("flood*", validEvents$eventType),]$Total)
+totalHeat <- sum(validEvents[grep("heat*", validEvents$eventType),]$Total)
+totalThunderstorm <- sum(validEvents[grep("tstm*", validEvents$eventType),]$Total)
+totalThunderstorm <- totalThunderstorm + sum(validEvents[grep("thunderstorm*", validEvents$eventType),]$Total)
+totalLightning <- sum(validEvents[grep("lightning*", validEvents$eventType),]$Total)
+```
+
+Below we create a new data frame with that houses the *signifigant* event types for total fatalities and injuries:
+```{r echo=TRUE}
+totalImpactByEvent <- data.frame(eventType = c("Tornado", "Flooding", "Heat", "Thunderstorms", "Lightning"), totalImpact = c(totalTornado, totalFlood, totalHeat, totalThunderstorm, totalLightning))
+head(totalImpactByEvent)
+```
+
+#### The events below were most harmful to populations:
+```{r echo=TRUE}
+library(ggplot2)
+gPlot <- ggplot(totalImpactByEvent, aes(eventType, totalImpact))
+print(gPlot + geom_bar(stat="identity") + xlab("") + ylab("Sum of Fatalities and Injuries"))
+```
+
+### Across the United States, which types of events have the greatest economic consequences?
+
+First we create a function that knows how to apply the multipliers *PROPDMGEXP/CROPDMGEXP* to the respective *PROPDMG/CROPDMG* values.  This function inteprets *PROPDMGEXP/CROPDMGEXP* as: H=100, K = 1,000, M = 1,000,000 and B = 1,000,000,000.  All other values in *PROPDMGEXP/CROPDMGEXP* are ignored for this analysis as there is no logical way to interpret other values.
+
+```{r echo=TRUE}
+unique(stormData$CROPDMGEXP)
+unique(stormData$PROPDMGEXP)
+
+calculateEconMultiplier <- function(economicImpact, multiplier) {
+        calculatedValue = economicImpact
+        if(multiplier == "h") {
+                calculatedValue = 100 * economicImpact
+        } else if(multiplier == "k") {
+                calculatedValue = 1000 * economicImpact        
+        } else if (multiplier == "m") {
+                calculatedValue = 1000000 * economicImpact
+        } else if (multiplier == "b") {
+                calculatedValue = 1000000000 * economicImpact
+        }
+       calculatedValue
+}
+```
+Next we aggregate the property damage and crop damage by the event type and "multiplier" (aka PROPDMGEXP/CROPDMGEXP).  Both event type and "multiplier" are converted to lower case to make de-dup possible.
+```{r echo=TRUE}
+economicPropertyImpact <- aggregate(stormData$PROPDMG, by=list(eventType = tolower(stormData$EVTYPE), multiplier= tolower(stormData$PROPDMGEXP)), sum)
+economicCropImpact <- aggregate(stormData$CROPDMG, by=list(eventType = tolower(stormData$EVTYPE), multiplier= tolower(stormData$CROPDMGEXP)), sum)
+colnames(economicPropertyImpact)[3] <- c("economicImpact")
+colnames(economicCropImpact)[3] <- c("economicImpact")
+
+head(economicPropertyImpact)
+head(economicCropImpact)
+```
+We then use the *plyr* package's *ddply* funciton to futher summarize the data applying the *calculateEconMultiplier(economicImpact, multiplier)* function to create a new variable called *calculatedImpact*.
+```{r echo=TRUE}
+library(plyr)
+options(scipen=999) # disable scientific notation
+calculatedPropertyImpact <- ddply(economicPropertyImpact, c("eventType", "multiplier"), summarise, calculatedImpact = calculateEconMultiplier(economicImpact, multiplier))
+calculatedCropImpact <- ddply(economicCropImpact, c("eventType", "multiplier"), summarise, calculatedImpact = calculateEconMultiplier(economicImpact, multiplier))
+head(calculatedPropertyImpact)
+head(calculatedCropImpact)
+```
+After using *ddply* we then do one more aggregation so that the event-types will be grouped with the values summed up, as *ddply* doesn't group the data (notice 2 rows with "blizzard").
+```{r echo=TRUE}
+totalCalculatedPropertyImpact <- aggregate(calculatedPropertyImpact$calculatedImpact, by=list(eventType = calculatedPropertyImpact$eventType), sum)
+totalCalculatedCropImpact <- aggregate(calculatedCropImpact$calculatedImpact, by=list(eventType = calculatedCropImpact$eventType), sum)
+
+colnames(totalCalculatedPropertyImpact)[2] <- "calculatedImpact"
+colnames(totalCalculatedCropImpact)[2] <- "calculatedImpact"
+
+head(totalCalculatedPropertyImpact)
+head(totalCalculatedCropImpact)
+```
+
+Now we have 2 data sets *totalCalculatedPropertyImpact* and *totalCalculatedCropImpact* that can be merged to create a single data set.  From this data set we calculate the "total" for both property and crop.  
+```{r echo=TRUE}
+mergedEconomicImpact <- merge(x = totalCalculatedPropertyImpact, y = totalCalculatedCropImpact, by = "eventType")
+colnames(mergedEconomicImpact)[2:3] <- c("calculatedPropertyImpact", "calculatedCropImpact")
+mergedEconomicImpact$Total <- rowSums(mergedEconomicImpact[,c(2,3)])
+head(mergedEconomicImpact)
+```
+
+Looking at the totals for both property and crop related economic impacts I went through the various event types manually using *grep()* to determine which types of events had the highest economic impacts.  These are the ones you can see used in the code below, as these were determined to be the most substantial.  
+```{r echo=TRUE}
+floodingEconImpact <- sum(mergedEconomicImpact[grep("flood*", mergedEconomicImpact$eventType),]$Total)
+hailEconImpact <- sum(mergedEconomicImpact[grep("hail*", mergedEconomicImpact$eventType),]$Total)
+droughtEconImpact <-sum(mergedEconomicImpact[grep("drought*", mergedEconomicImpact$eventType),]$Total)
+tornadoEconImpact <-sum(mergedEconomicImpact[grep("tornado*", mergedEconomicImpact$eventType),]$Total)
+hurricaneEconImpact <-sum(mergedEconomicImpact[grep("hurricane*", mergedEconomicImpact$eventType),]$Total)
+iceEconImpact <-sum(mergedEconomicImpact[grep("ice*", mergedEconomicImpact$eventType),]$Total)
+stormSurgeEconImpact <-sum(mergedEconomicImpact[grep("storm surge*", mergedEconomicImpact$eventType),]$Total)
+                              
+totalEconImpactByEvent <- data.frame(eventType = c("Flooding", "Hail", "Drought", "Tornado", "Hurricane", "Ice", "Storm Surge"), totalImpact = c(floodingEconImpact, hailEconImpact, droughtEconImpact, tornadoEconImpact, hurricaneEconImpact,iceEconImpact,stormSurgeEconImpact))
+head(totalEconImpactByEvent)
+```
+
+#### The events that had the largest economic impact were: 
+```{r echo=TRUE}
+library(ggplot2)
+gPlot <- ggplot(totalEconImpactByEvent, aes(eventType, totalImpact))
+print(gPlot + geom_bar(stat="identity") + xlab("") + ylab("Total economic property and crop damage in U.S. dollars"))
+```
