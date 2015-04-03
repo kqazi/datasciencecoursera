@@ -1,0 +1,75 @@
+---
+title: "toothGrowth"
+author: "Karim Qazi"
+date: "September 19, 2014"
+output: html_document
+---
+**Load the ToothGrowth data and perform some basic exploratory data analyses:**
+```{r echo=TRUE}
+library(knitr)
+data(ToothGrowth)
+head(ToothGrowth)
+summary(ToothGrowth)
+vitaminCGrowth <- ToothGrowth[which(ToothGrowth$supp == "VC"),]
+ojGrowth <- ToothGrowth[which(ToothGrowth$supp == "OJ"),]
+```
+
+**Mean of Vitamin C tooth growth by dosage:**
+```{r echo=TRUE}
+meanVCGrowthByDose <- aggregate(x = vitaminCGrowth$len, by = list(vitaminCGrowth$dose), mean)
+colnames(meanVCGrowthByDose)[1:2] <- c("Dosage", "Tooth Growth")
+kable(meanVCGrowthByDose, format = "pandoc")
+```
+
+**Mean of OJ tooth growth by dosage:**
+```{r echo=TRUE}
+meanOJGrowthByDose <- aggregate(x = ojGrowth$len, by = list(ojGrowth$dose), mean)
+colnames(meanOJGrowthByDose)[1:2] <- c("Dosage", "Tooth Growth")
+kable(meanOJGrowthByDose, format = "pandoc")
+```
+
+Execute T-test with "paired" since the same 10 guinea pigs were given three dose levels of Vitamin C (0.5, 1, and 2 mg) with each of two delivery methods (orange juice or ascorbic acid) (per TootGrowth docs).  Also with such low sample sizes (10 each) a T-test would be most applicable here.
+
+**Confidence interval for tooth growth differnces between OJ and Vitamin C:**
+
+```{r echo=TRUE}
+lowDosageTest <- t.test(ojGrowth[which(ojGrowth$dose == 0.5),]$len, 
+                        vitaminCGrowth[which(vitaminCGrowth$dose == 0.5),]$len, 
+                        paired=TRUE)
+midDosageTest <- t.test(ojGrowth[which(ojGrowth$dose == 1.0),]$len, 
+                        vitaminCGrowth[which(vitaminCGrowth$dose == 1.0),]$len, 
+                        paired=TRUE)
+highDosageTest <- t.test(ojGrowth[which(ojGrowth$dose == 2.0),]$len, 
+                         vitaminCGrowth[which(vitaminCGrowth$dose == 2.0),]$len, 
+                         paired=TRUE)
+```
+```{r echo=FALSE}
+dosageResults <- data.frame(c("Low Dosage", "Mid Dosage", "High Dosage"), 
+                            c(paste(lowDosageTest$conf.int[1:2], collapse = ' '), 
+                              paste(midDosageTest$conf.int[1:2], collapse = ' '), 
+                              paste(highDosageTest$conf.int[1:2], collapse = ' ')), 
+                            c(lowDosageTest$p.value, midDosageTest$p.value,highDosageTest$p.value))
+colnames(dosageResults)[1:3] <- c("Dosage", "Paired t-test confidence interval", "P value")
+```
+
+Below are the various confidence intervals and p-values for each dosage when comparing OJ to Vitamin C as it relates to tooth growth:
+```{r echo=FALSE}
+kable(dosageResults, format = "pandoc")
+```
+**Conclusions**
+
+The hypothesis test is below, where the value of **mu** is the mean of Vitamin C tooth growth for the low and mid dosage, so rejecting the NULL hypothesis would indicate that OJ leads to greather tooth growth than Vitamin C and vice versa.  The reason for only evaluating the **low** and **mid** dosage is because these had p-values that have a high probability of rejecting the NULL hypothesis.
+
+Assuming a low dosage p-value of **`r lowDosageTest$p.value`** and mid dosage p-value of **`r midDosageTest$p.value`** we can **reject** the NULL hypotheseis and conclude that OJ leads to greather tooth growth than Vitamin C for these dosage levels, assuming a 0.05 level of signifigance (or 95% confidence level) .
+
+**Low Hypothesis Test**
+
+H0 = mu = **`r meanVCGrowthByDose[1,2]`**
+
+HA = mu > **`r meanVCGrowthByDose[1,2]`**
+
+**Mid Hypothesis Test**
+
+H0 = mu = **`r meanVCGrowthByDose[2,2]`**
+
+HA = mu > **`r meanVCGrowthByDose[2,2]`**
